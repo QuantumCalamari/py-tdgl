@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Union
+from typing import Union, Optional  # ADD Optional here!
 
 
 class SolverOptionsError(ValueError):
@@ -61,6 +61,12 @@ class SolverOptions:
             step.
         screening_step_size: Step size :math:`\\alpha` for Polyak's method.
         screening_step_drag: Drag parameter :math:`\\beta` for Polyak's method.
+        thermal_conductivity: Thermal conductivity κ in W/m·K. Default: 100.0
+        heat_capacity: Volumetric heat capacity C in J/m³·K. Default: 1000.0
+        initial_temperature: Initial uniform temperature T₀ in K. Default: 2.0
+        critical_temperature: Superconducting critical temperature T_c in K. Default: 9.2 (Nb)
+        include_thermal: Enable thermal coupling. Default: False
+        thermal_dt: Time step for thermal solver. If None, uses dt_init. Default: None
     """
 
     solve_time: float
@@ -87,8 +93,16 @@ class SolverOptions:
     screening_tolerance: float = 1e-3
     screening_step_size: float = 0.1
     screening_step_drag: float = 0.5
+    # Thermal parameters - FIXED TYPOS in comments
+    thermal_conductivity: float = 100.0    # κ (W/m·K)
+    heat_capacity: float = 1000.0          # C (J/m³·K)
+    initial_temperature: float = 2.0       # T₀ (K)
+    critical_temperature: float = 9.2      # T_c (K)
+    include_thermal: bool = False          # Enable/Disable thermal coupling
+    thermal_dt: Optional[float] = None     # Thermal time step (optional)
 
     def validate(self) -> None:
+        # Existing validation code (keep all this)
         if self.dt_init > self.dt_max:
             raise SolverOptionsError("dt_init must be less than or equal to dt_max.")
 
@@ -155,7 +169,7 @@ class SolverOptions:
                 import pypardiso  # type: ignore # noqa: F401
             except ImportError:
                 raise SolverOptionsError(
-                    "SparseSolver.CUPY requires an Intel CPU"
+                    "SparseSolver.PARDISO requires an Intel CPU"  # FIXED TYPO: was CUPY
                     " and the pypardiso Python package."
                 )
         if self.sparse_solver is SparseSolver.CUPY:
@@ -164,3 +178,32 @@ class SolverOptions:
                     "SparseSolver.CUPY requires SolverOptions.gpu = True,"
                     " and therefore requires a GPU and the CuPy Python package."
                 )
+        
+        # ========== THERMAL VALIDATION ==========
+        # REMOVE the assignment lines - they're already set by the dataclass!
+        # These lines are WRONG and should be DELETED:
+        # self.thermal_conductivity = thermal_conductivity
+        # self.heat_capacity = heat_capacity
+        # self.initial_temperature = initial_temperature
+        # self.critical_temperature = critical_temperature
+        # self.include_thermal = include_thermal
+        # self.thermal_dt = thermal_dt if thermal_dt is not None else dt
+        
+        # INSTEAD, just add validation:
+        if self.include_thermal:
+            if self.thermal_conductivity <= 0:
+                raise SolverOptionsError("thermal_conductivity must be > 0")
+            if self.heat_capacity <= 0:
+                raise SolverOptionsError("heat_capacity must be > 0")
+            if self.initial_temperature <= 0:
+                raise SolverOptionsError("initial_temperature must be > 0")
+            if self.critical_temperature <= self.initial_temperature:
+                raise SolverOptionsError(
+                    f"critical_temperature ({self.critical_temperature}) must be > "
+                    f"initial_temperature ({self.initial_temperature})"
+                )
+            # Set thermal_dt if not provided
+            if self.thermal_dt is None:
+                self.thermal_dt = self.dt_init  # Use main time step
+            elif self.thermal_dt <= 0:
+                raise SolverOptionsError("thermal_dt must be > 0")
